@@ -1,0 +1,445 @@
+/* 图池本地化管家 - ST Asset Localizer 2.1 Style */
+
+.st-al-btn-char {
+    cursor: pointer;
+    color: #4ade80 !important;
+    transition: all 0.2s ease;
+}
+.st-al-btn-char:hover {
+    color: #86efac !important;
+    transform: scale(1.1);
+}
+
+/* Modal Overlay */
+.st-al-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.78);
+    backdrop-filter: blur(8px);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: stAlFadeIn 0.2s ease;
+}
+
+@keyframes stAlFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Modal Container */
+.st-al-modal {
+    background: #181b24;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    width: 960px;
+    max-width: 95vw;
+    height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+    color: #e2e8f0;
+    font-family: inherit;
+    overflow: hidden;
+}
+
+/* Sub-modal (Card Asset Settings) */
+.st-al-submodal {
+    background: #1a1e29;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 14px;
+    width: 680px;
+    max-width: 92vw;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8);
+    color: #e2e8f0;
+    overflow: hidden;
+    animation: stAlScaleIn 0.2s ease;
+}
+
+@keyframes stAlScaleIn {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* Header */
+.st-al-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 22px;
+    background: #1e2230;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.st-al-header-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.15rem;
+    font-weight: 600;
+}
+.st-al-header-title i {
+    color: #38bdf8;
+}
+.st-al-close-btn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 1.5rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: background 0.15s, color 0.15s;
+}
+.st-al-close-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+/* Storage Path Banner */
+.st-al-path-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 22px;
+    background: #12151c;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 0.85rem;
+    color: #94a3b8;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.st-al-path-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+}
+.st-al-path-code {
+    background: #1e2230;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 3px 8px;
+    border-radius: 6px;
+    color: #38bdf8;
+    font-family: monospace;
+    font-size: 0.82rem;
+    max-width: 420px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.st-al-path-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Toolbar */
+.st-al-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 22px;
+    background: #181b24;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.st-al-search-box {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+    max-width: 380px;
+}
+.st-al-search-box i {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #64748b;
+}
+.st-al-search-box input {
+    width: 100%;
+    padding: 8px 12px 8px 34px;
+    background: #12151c;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #f1f5f9;
+    font-size: 0.88rem;
+    outline: none;
+    transition: border 0.15s;
+}
+.st-al-search-box input:focus {
+    border-color: #38bdf8;
+}
+
+.st-al-filters {
+    display: flex;
+    gap: 4px;
+    background: #12151c;
+    padding: 3px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.st-al-filter-btn {
+    padding: 6px 14px;
+    border: none;
+    background: transparent;
+    color: #94a3b8;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.st-al-filter-btn.active {
+    background: #0284c7;
+    color: #fff;
+    font-weight: 500;
+}
+.st-al-filter-btn:hover:not(.active) {
+    color: #e2e8f0;
+}
+
+/* Action Buttons */
+.st-al-btn-primary {
+    background: #0284c7;
+    color: #fff;
+    border: none;
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.15s, transform 0.1s;
+}
+.st-al-btn-primary:hover {
+    background: #0369a1;
+}
+.st-al-btn-primary:disabled {
+    background: #334155;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.st-al-btn-secondary {
+    background: #232736;
+    color: #cbd5e1;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s;
+}
+.st-al-btn-secondary:hover {
+    background: #2e3344;
+    color: #fff;
+}
+.st-al-btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.st-al-btn-outline {
+    background: transparent;
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s;
+}
+.st-al-btn-outline:hover {
+    background: rgba(56, 189, 248, 0.1);
+    border-color: #38bdf8;
+}
+
+.st-al-btn-danger {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s;
+}
+.st-al-btn-danger:hover {
+    background: rgba(239, 68, 68, 0.25);
+    color: #fca5a5;
+}
+
+/* Card Table */
+.st-al-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+}
+.st-al-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+.st-al-table th {
+    background: #141720;
+    padding: 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.st-al-table td {
+    padding: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    font-size: 0.9rem;
+    vertical-align: middle;
+}
+.st-al-table tr:hover td {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.st-al-card-title {
+    font-weight: 500;
+    color: #f8fafc;
+    margin-bottom: 2px;
+}
+.st-al-card-file {
+    font-size: 0.78rem;
+    color: #64748b;
+}
+
+.st-al-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 9999px;
+    font-size: 0.78rem;
+    font-weight: 500;
+}
+.st-al-badge-success {
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.st-al-badge-warning {
+    background: rgba(234, 179, 8, 0.15);
+    color: #facc15;
+    border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.st-al-stat {
+    font-size: 0.82rem;
+    color: #94a3b8;
+}
+.st-al-stat b {
+    color: #e2e8f0;
+}
+
+/* Progress Section */
+.st-al-progress-wrapper {
+    padding: 12px 22px;
+    background: #1e2230;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.st-al-progress-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    margin-bottom: 6px;
+    color: #cbd5e1;
+}
+.st-al-progress-bar-bg {
+    width: 100%;
+    height: 8px;
+    background: #334155;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.st-al-progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #38bdf8, #2563eb);
+    width: 0%;
+    transition: width 0.2s ease;
+}
+
+/* Card Detail / Submodal UI elements */
+.st-al-submodal-body {
+    padding: 20px 24px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.st-al-card-box {
+    background: #232736;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 14px 18px;
+}
+.st-al-box-title {
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.st-al-box-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+}
+.st-al-box-row:last-child {
+    margin-bottom: 0;
+}
+
+.st-al-sample-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    font-size: 0.78rem;
+    font-family: monospace;
+}
+.st-al-sample-table th {
+    text-align: left;
+    color: #64748b;
+    padding: 4px 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.st-al-sample-table td {
+    padding: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    word-break: break-all;
+}
+
+.st-al-submodal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    background: #141720;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}

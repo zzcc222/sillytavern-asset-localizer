@@ -1,0 +1,12 @@
+{
+  "display_name": "图池本地化管家",
+  "loading_order": 50,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Antigravity",
+  "version": "1.0.0",
+  "homePage": "",
+  "auto_update": false
+}
