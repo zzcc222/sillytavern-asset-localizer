@@ -1,0 +1,21 @@
+{
+  "name": "sillytavern-asset-localizer",
+  "version": "2.1.0",
+  "type": "module",
+  "main": "index.js",
+  "description": "SillyTavern 图池本地化管家 - 一键下载角色卡外部图池至服务端本地，无梯秒开立绘，支持多端共享、图池设置与无损原链还原。",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zzcc222/sillytavern-asset-localizer.git"
+  },
+  "keywords": [
+    "sillytavern",
+    "sillytavern-plugin",
+    "sillytavern-extension",
+    "asset-localizer",
+    "character-cards",
+    "image-cache"
+  ],
+  "author": "zzcc222",
+  "license": "MIT"
+}
