@@ -91,6 +91,63 @@ export function extractCleanFilename(url, fallbackStem = 'image') {
     return `${fallbackStem}.png`;
 }
 
+export function extractCardVariants(text) {
+    if (!text || typeof text !== 'string') return null;
+    const varMatch = text.match(/(?:const|var|let)?\s*["']?variants["']?\s*[:=]\s*\{([^}]+)\}/i);
+    if (varMatch) {
+        const values = [];
+        for (const m of varMatch[1].matchAll(/:\s*['"]([a-zA-Z0-9_\-]+)['"]/g)) {
+            if (!values.includes(m[1])) values.push(m[1]);
+        }
+        if (values.length > 0) return values;
+    }
+    return null;
+}
+
+export function extractCharBlocks(text) {
+    if (!text || typeof text !== 'string') return [];
+    const blocks = [];
+    const seenStarts = new Set();
+    const regex = /(?:\\*["']?(?:sfwBase|nsfwBase|pregBase)\\*["']?)\s*[:=]/gi;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+        const keyPos = match.index;
+        let depth = 0;
+        let startPos = -1;
+        for (let i = keyPos - 1; i >= 0; i--) {
+            const ch = text[i];
+            if (ch === '}') depth++;
+            else if (ch === '{') {
+                if (depth === 0) {
+                    startPos = i;
+                    break;
+                }
+                depth--;
+            }
+        }
+        if (startPos === -1 || seenStarts.has(startPos)) continue;
+        seenStarts.add(startPos);
+
+        let openCount = 0;
+        let endPos = -1;
+        for (let i = startPos; i < text.length; i++) {
+            const ch = text[i];
+            if (ch === '{') openCount++;
+            else if (ch === '}') {
+                openCount--;
+                if (openCount === 0) {
+                    endPos = i;
+                    break;
+                }
+            }
+        }
+        if (endPos !== -1) {
+            blocks.push(text.slice(startPos, endPos + 1));
+        }
+    }
+    return blocks;
+}
+
 function findPngFilesRecursively(dir, baseDir = dir) {
     let results = [];
     if (!fs.existsSync(dir)) return results;
@@ -164,7 +221,8 @@ export function scanCard(cardFileName) {
 
     const SFW_CATS = ['uniform', 'daily', 'outing', 'training', 'naked'];
     const SFW_EMOS = ['calm', 'happy', 'distress', 'dazed'];
-    const NSFW_VARS = ['blowjob', 'footjob', 'holding_pee', 'sex', 'anal', 'orgasm', 'anal_training', 'training', 'exhibition', 'nude_selfie', 'outdoor_selfie', 'indoor_selfie'];
+    const DEFAULT_NSFW_VARS = ['blowjob', 'footjob', 'holding_pee', 'sex', 'anal', 'orgasm', 'anal_training', 'training', 'exhibition', 'nude_selfie', 'outdoor_selfie', 'indoor_selfie'];
+    const detectedVariants = extractCardVariants(textToScan) || DEFAULT_NSFW_VARS;
 
     const downloadTasks = [];
     const externalUrls = new Set();
@@ -200,10 +258,9 @@ export function scanCard(cardFileName) {
         externalUrls.add(cleanUrl);
     }
 
-    // 1. Dynamic charactersData blocks - flexible key order, quotes, and optional fields
-    const charBlocks = [...textToScan.matchAll(/\{[^{}]*?(?:sfwBase|nsfwBase|pregBase)[^{}]*?\}/gi)];
-    for (const match of charBlocks) {
-        const rawBlock = match[0];
+    // 1. Dynamic charactersData blocks - supports nested overrides and arbitrary fields
+    const charBlocks = extractCharBlocks(textToScan);
+    for (const rawBlock of charBlocks) {
         const block = rawBlock.replace(/\\"/g, '"').replace(/\\'/g, "'");
         const idMatch = block.match(/(?:^|[^a-zA-Z0-9_])(?:id|name|characterId)["']?\s*:\s*["']([^"']+)["']/i);
         const sfwMatch = block.match(/(?:^|[^a-zA-Z0-9_])sfwBase["']?\s*:\s*["']([^"']+)["']/i);
@@ -213,23 +270,31 @@ export function scanCard(cardFileName) {
         const rawCid = (idMatch ? idMatch[1] : baseName).trim();
         const cid = sanitizeFolderName(rawCid);
 
+        const overrideMatch = block.match(/overrides\s*:\s*\{([^}]+)\}/i);
+        const charOverrides = {};
+        if (overrideMatch) {
+            for (const om of overrideMatch[1].matchAll(/['"]?([a-zA-Z0-9_\-]+)['"]?\s*:\s*['"]([^'"]+)['"]/g)) {
+                charOverrides[om[1]] = path.basename(om[2].replace(/\\/g, '/').replace(/\\\//g, '/').trim());
+            }
+        }
+
         if (sfwMatch) {
             const rawSfw = unescapeUrl(sfwMatch[1]).replace(/\/+$/, '');
             const isLocal = rawSfw.includes(newLocalPrefix) || rawSfw.includes(legacyLocalPrefix);
             const remoteBase = rawSfw.startsWith('http') ? rawSfw : (originalUrlMap[rawSfw] || null);
             if (remoteBase && !isLocal) externalBaseUrls.add(remoteBase);
-            for (const cat of SFW_CATS) {
-                for (const emo of SFW_EMOS) {
-                    const fname = `${cid}_${cat}_${emo}.png`;
-                    if (rawSfw.startsWith('http')) {
+            if (rawSfw.startsWith('http')) {
+                for (const cat of SFW_CATS) {
+                    for (const emo of SFW_EMOS) {
+                        const fname = `${cid}_${cat}_${emo}.png`;
                         addTask(fname, `${rawSfw}/${fname}`, rawSfw);
-                    } else if (isLocal) {
-                        if (!diskFiles.has(fname) && !missingFiles.includes(fname)) {
-                            missingFiles.push(fname);
-                            if (remoteBase) {
-                                addTask(fname, `${remoteBase}/${fname}`, remoteBase);
-                            }
-                        }
+                    }
+                }
+            } else if (isLocal && diskFiles.size === 0 && remoteBase) {
+                for (const cat of SFW_CATS) {
+                    for (const emo of SFW_EMOS) {
+                        const fname = `${cid}_${cat}_${emo}.png`;
+                        addTask(fname, `${remoteBase}/${fname}`, remoteBase);
                     }
                 }
             }
@@ -239,17 +304,15 @@ export function scanCard(cardFileName) {
             const isLocal = rawNsfw.includes(newLocalPrefix) || rawNsfw.includes(legacyLocalPrefix);
             const remoteBase = rawNsfw.startsWith('http') ? rawNsfw : (originalUrlMap[rawNsfw] || null);
             if (remoteBase && !isLocal) externalBaseUrls.add(remoteBase);
-            for (const v of NSFW_VARS) {
-                const fname = `${cid}_${v}.png`;
-                if (rawNsfw.startsWith('http')) {
+            if (rawNsfw.startsWith('http')) {
+                for (const v of detectedVariants) {
+                    const fname = charOverrides[v] || `${cid}_${v}.png`;
                     addTask(fname, `${rawNsfw}/${fname}`, rawNsfw);
-                } else if (isLocal) {
-                    if (!diskFiles.has(fname) && !missingFiles.includes(fname)) {
-                        missingFiles.push(fname);
-                        if (remoteBase) {
-                            addTask(fname, `${remoteBase}/${fname}`, remoteBase);
-                        }
-                    }
+                }
+            } else if (isLocal && diskFiles.size === 0 && remoteBase) {
+                for (const v of detectedVariants) {
+                    const fname = charOverrides[v] || `${cid}_${v}.png`;
+                    addTask(fname, `${remoteBase}/${fname}`, remoteBase);
                 }
             }
         }
@@ -258,17 +321,15 @@ export function scanCard(cardFileName) {
             const isLocal = rawPreg.includes(newLocalPrefix) || rawPreg.includes(legacyLocalPrefix);
             const remoteBase = rawPreg.startsWith('http') ? rawPreg : (originalUrlMap[rawPreg] || null);
             if (remoteBase && !isLocal) externalBaseUrls.add(remoteBase);
-            for (const cat of SFW_CATS) {
-                const fname = `${cid}_pregnant_${cat}.png`;
-                if (rawPreg.startsWith('http')) {
+            if (rawPreg.startsWith('http')) {
+                for (const cat of SFW_CATS) {
+                    const fname = `${cid}_pregnant_${cat}.png`;
                     addTask(fname, `${rawPreg}/${fname}`, rawPreg);
-                } else if (isLocal) {
-                    if (!diskFiles.has(fname) && !missingFiles.includes(fname)) {
-                        missingFiles.push(fname);
-                        if (remoteBase) {
-                            addTask(fname, `${remoteBase}/${fname}`, remoteBase);
-                        }
-                    }
+                }
+            } else if (isLocal && diskFiles.size === 0 && remoteBase) {
+                for (const cat of SFW_CATS) {
+                    const fname = `${cid}_pregnant_${cat}.png`;
+                    addTask(fname, `${remoteBase}/${fname}`, remoteBase);
                 }
             }
         }
@@ -285,17 +346,15 @@ export function scanCard(cardFileName) {
             const isLocal = rawBase.includes(newLocalPrefix) || rawBase.includes(legacyLocalPrefix);
             const remoteBase = rawBase.startsWith('http') ? rawBase : (originalUrlMap[rawBase] || null);
             if (remoteBase && !isLocal) externalBaseUrls.add(remoteBase);
-            for (const v of NSFW_VARS) {
-                const fname = `${charCode}_${v}.png`;
-                if (rawBase.startsWith('http')) {
+            if (rawBase.startsWith('http')) {
+                for (const v of detectedVariants) {
+                    const fname = `${charCode}_${v}.png`;
                     addTask(fname, `${rawBase}/${fname}`, rawBase);
-                } else if (isLocal) {
-                    if (!diskFiles.has(fname) && !missingFiles.includes(fname)) {
-                        missingFiles.push(fname);
-                        if (remoteBase) {
-                            addTask(fname, `${remoteBase}/${fname}`, remoteBase);
-                        }
-                    }
+                }
+            } else if (isLocal && diskFiles.size === 0 && remoteBase) {
+                for (const v of detectedVariants) {
+                    const fname = `${charCode}_${v}.png`;
+                    addTask(fname, `${remoteBase}/${fname}`, remoteBase);
                 }
             }
         }
@@ -403,7 +462,8 @@ export function scanCard(cardFileName) {
     } catch {}
 
     const dirStats = getDirStats(fs.existsSync(assetDir) ? assetDir : legacyDir);
-    const isFullyLocalized = totalExternalCount === 0 && missingFiles.length === 0 && (totalLocalMatches > 0 || (downloadTasks.length === 0 && dirStats.count === 0));
+    const hasLocalAssets = totalLocalMatches > 0 || dirStats.count > 0;
+    const isFullyLocalized = totalExternalCount === 0 && downloadTasks.length === 0 && missingFiles.length === 0 && hasLocalAssets;
 
     return {
         cardFileName,

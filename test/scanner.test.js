@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import zlib from 'node:zlib';
-import { scanCard, parseCardData, getCardBaseName, extractCleanFilename, unescapeUrl } from '../src/scanner.js';
+import { scanCard, parseCardData, getCardBaseName, extractCleanFilename, unescapeUrl, extractCardVariants } from '../src/scanner.js';
 import { writePngTextChunk } from '../src/png-parser.js';
 
 function createMockCardPng(cardJsonString) {
@@ -195,5 +195,58 @@ test('scanner: scanCard accurately ignores non-image author links (discord, gith
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
 });
+
+test('scanner: extractCardVariants correctly extracts custom variant values', () => {
+    const script = `
+        const variants = {
+            '乳头调教': 'nipple_training',
+            '口交': 'blowjob',
+            '性交': 'sex',
+            '阴部自拍': 'vulva_selfie'
+        };
+    `;
+    const vars = extractCardVariants(script);
+    assert.deepEqual(vars, ['nipple_training', 'blowjob', 'sex', 'vulva_selfie']);
+});
+
+test('scanner: scanCard honors custom variants and character overrides without phantom tasks', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'st-test-custom-vars-'));
+    try {
+        const cardData = {
+            name: 'CustomVarCard',
+            description: `
+                const variants = {
+                    '乳头调教': 'nipple_training',
+                    '口交': 'blowjob'
+                };
+                charactersData = [{
+                    id: 'heroine',
+                    sfwBase: 'https://raw.githubusercontent.com/user/repo/main/heroine/sfw',
+                    nsfwBase: 'https://raw.githubusercontent.com/user/repo/main/heroine/nsfw',
+                    overrides: {
+                        'blowjob': '/card_assets/CustomVarCard/heroine_special_bj.png'
+                    }
+                }];
+            `
+        };
+
+        const pngBuf = createMockCardPng(JSON.stringify(cardData));
+        const cardPath = path.join(tmpDir, 'CustomVarCard.png');
+        fs.writeFileSync(cardPath, pngBuf);
+
+        const res = scanCard(cardPath);
+        assert.ok(res);
+        // Custom variants only has 2 variants: nipple_training and blowjob
+        // blowjob is overridden to heroine_special_bj.png
+        assert.ok(res.downloadTasks.some(t => t.filename === 'heroine_nipple_training.png'), 'nipple_training generated');
+        assert.ok(res.downloadTasks.some(t => t.filename === 'heroine_special_bj.png'), 'override filename used');
+        // Standard non-existent variants (e.g. sex, anal, indoor_selfie) MUST NOT be generated
+        assert.ok(!res.downloadTasks.some(t => t.filename === 'heroine_sex.png'), 'Non-existent variant not generated');
+        assert.ok(!res.downloadTasks.some(t => t.filename === 'heroine_indoor_selfie.png'), 'Non-existent variant not generated');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
 
 

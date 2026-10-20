@@ -155,7 +155,7 @@ async function doLocalizeCard(cardFileName, buttonEl) {
 // Batch localize all unlocalized cards
 async function doBatchLocalize() {
     if (isProcessing) return;
-    const targets = currentCards.filter(c => !c.isFullyLocalized || c.totalExternalCount > 0);
+    const targets = currentCards.filter(c => !c.isFullyLocalized && (c.totalExternalCount > 0 || (c.missingOnDiskCount || 0) > 0));
     if (targets.length === 0) {
         toastr.info('所有角色卡均已处于完全本地化状态！');
         return;
@@ -397,7 +397,8 @@ function renderCardTable() {
     if (!tbody) return;
 
     const filtered = currentCards.filter(c => {
-        if (activeFilter === 'need' && c.isFullyLocalized) return false;
+        const isPending = (c.totalExternalCount > 0) || ((c.missingOnDiskCount || 0) > 0);
+        if (activeFilter === 'need' && (!isPending || c.isFullyLocalized)) return false;
         if (activeFilter === 'localized' && !c.isFullyLocalized) return false;
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
@@ -412,11 +413,19 @@ function renderCardTable() {
     }
 
     tbody.innerHTML = filtered.map(c => {
+        const isPending = (c.totalExternalCount > 0) || ((c.missingOnDiskCount || 0) > 0);
         let badgeHtml = '';
+        let btnText = '检查图池';
+        let btnIcon = 'fa-magnifying-glass';
+
         if (c.isFullyLocalized) {
             badgeHtml = `<span class="st-al-badge st-al-badge-success"><i class="fa-solid fa-check-circle"></i> 已本地化</span>`;
-        } else if (c.totalExternalCount > 0) {
+            btnText = '重新同步';
+            btnIcon = 'fa-arrows-rotate';
+        } else if (isPending) {
             badgeHtml = `<span class="st-al-badge st-al-badge-warning"><i class="fa-solid fa-cloud-arrow-down"></i> 待本地化</span>`;
+            btnText = '一键本地化';
+            btnIcon = 'fa-bolt';
         } else {
             badgeHtml = `<span class="st-al-badge" style="background:#334155;color:#94a3b8;"><i class="fa-solid fa-circle-info"></i> 本地卡</span>`;
         }
@@ -430,7 +439,7 @@ function renderCardTable() {
                 <td>${badgeHtml}</td>
                 <td>
                     <div class="st-al-stat">本地调用: <b>${c.localAssetRefMatches || 0} 处</b></div>
-                    <div class="st-al-stat">待下载: <b style="color:${c.missingOnDiskCount > 0 ? '#facc15' : '#94a3b8'}">${c.missingOnDiskCount || 0}</b></div>
+                    <div class="st-al-stat">待下载: <b style="color:${(c.missingOnDiskCount || 0) > 0 ? '#facc15' : '#94a3b8'}">${c.missingOnDiskCount || 0}</b></div>
                 </td>
                 <td>
                     <div class="st-al-stat">立绘文件: <b>${c.diskFilesCount || 0} 张</b></div>
@@ -439,7 +448,7 @@ function renderCardTable() {
                 <td style="text-align: right; white-space: nowrap;">
                     <div style="display:inline-flex;gap:6px;align-items:center;">
                         <button class="st-al-btn-secondary st-al-localize-btn" data-file="${escapeHtml(c.cardFileName)}">
-                            <i class="fa-solid fa-bolt"></i> ${c.isFullyLocalized ? '重新同步' : '一键本地化'}
+                            <i class="fa-solid ${btnIcon}"></i> ${btnText}
                         </button>
                         <button class="st-al-btn-outline st-al-assets-btn" data-file="${escapeHtml(c.cardFileName)}" title="查看本地图池立绘资产与文件清单">
                             <i class="fa-solid fa-folder-open"></i> 图池资产
