@@ -431,5 +431,5 @@ export function scanCard(cardFileName) {
 export function scanAllCards() {
     if (!fs.existsSync(CHARACTERS_DIR)) return [];
     const files = findPngFilesRecursively(CHARACTERS_DIR, CHARACTERS_DIR);
-    return files.map(f => scanCard(f));
+    return files.map(f => scanCard(f)).filter(c => !c.error);
 }
