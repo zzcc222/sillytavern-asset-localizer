@@ -44,13 +44,13 @@
     overflow: hidden;
 }
 
-/* Sub-modal (Card Asset Settings) */
+/* Sub-modal (Card Asset Details) */
 .st-al-submodal {
     background: #1a1e29;
     border: 1px solid rgba(255, 255, 255, 0.16);
     border-radius: 14px;
-    width: 680px;
-    max-width: 92vw;
+    width: 720px;
+    max-width: 94vw;
     max-height: 85vh;
     display: flex;
     flex-direction: column;
@@ -268,6 +268,22 @@
     border-color: #38bdf8;
 }
 
+.st-al-btn-copy {
+    background: rgba(255, 255, 255, 0.08);
+    color: #94a3b8;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.st-al-btn-copy:hover {
+    background: rgba(56, 189, 248, 0.2);
+    color: #38bdf8;
+    border-color: #38bdf8;
+}
+
 .st-al-btn-danger {
     background: rgba(239, 68, 68, 0.15);
     color: #f87171;
@@ -416,23 +432,49 @@
     margin-bottom: 0;
 }
 
+.st-al-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 4px;
+}
+.st-al-stat-card {
+    background: #181b24;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 10px 14px;
+    text-align: center;
+}
+.st-al-stat-card-label {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin-bottom: 4px;
+}
+.st-al-stat-card-val {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #f8fafc;
+}
+
 .st-al-sample-table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 8px;
     font-size: 0.78rem;
     font-family: monospace;
 }
 .st-al-sample-table th {
     text-align: left;
     color: #64748b;
-    padding: 4px 6px;
+    padding: 6px 8px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 .st-al-sample-table td {
-    padding: 6px;
+    padding: 6px 8px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
     word-break: break-all;
+}
+.st-al-sample-table tr:hover td {
+    background: rgba(255, 255, 255, 0.02);
 }
 
 .st-al-submodal-footer {
