@@ -92,7 +92,7 @@ async function doLocalizeCard(cardFileName, buttonEl) {
         const res = await apiRequest('/localize', 'POST', { cardFileName });
         if (res.ok && res.result?.success) {
             showProgress(`本地化完成！`, 100);
-            toastr.success(`《${res.result.baseName}》图池本地化成功！已生成原卡备份注册表。`);
+            toastr.success(`《${res.result.baseName}》图池本地化就绪！立绘已全部切换为本地极速直连。`);
             await refreshStCharacters();
             await fetchCardList();
             if (subModalElement) closeSubModal();
@@ -107,37 +107,8 @@ async function doLocalizeCard(cardFileName, buttonEl) {
         setTimeout(hideProgress, 1500);
         if (buttonEl) {
             buttonEl.disabled = false;
-            buttonEl.innerHTML = '<i class="fa-solid fa-bolt"></i> 一键本地化';
+            buttonEl.innerHTML = '<i class="fa-solid fa-bolt"></i> 重新同步';
         }
-    }
-}
-
-async function doRevertCard(cardFileName, customBase = null) {
-    if (isProcessing) return;
-    if (!confirm(`确定要将《${cardFileName}》还原回原作者的原始外链吗？\n\n还原后角色卡将恢复为外部网络引用，便于您将卡片导出并分享给没有本地环境的好友。`)) {
-        return;
-    }
-
-    isProcessing = true;
-    showProgress(`正在还原 ${cardFileName} 为原始外链...`, 50);
-
-    try {
-        const res = await apiRequest('/revert', 'POST', { cardFileName, customOriginalBase: customBase });
-        if (res.ok && res.result?.success) {
-            showProgress(`还原完成！`, 100);
-            toastr.success(`《${cardFileName}》已成功还原为原作者原始外链！`);
-            await refreshStCharacters();
-            await fetchCardList();
-            if (subModalElement) closeSubModal();
-        } else {
-            toastr.error('还原失败: ' + (res.error || '未知错误'));
-        }
-    } catch (err) {
-        console.error('[图池本地化管家] 还原失败:', err);
-        toastr.error('还原失败: ' + err.message);
-    } finally {
-        isProcessing = false;
-        setTimeout(hideProgress, 1500);
     }
 }
 
@@ -192,12 +163,12 @@ function hideProgress() {
     if (wrap) wrap.style.display = 'none';
 }
 
-// Open Card Asset Link Settings Sub-Modal
-async function openCardSettingsModal(cardFileName) {
+// Open Pure Local Card Asset Inventory Sub-Modal
+async function openCardAssetsModal(cardFileName) {
     try {
         const res = await apiRequest(`/card-detail?cardFileName=${encodeURIComponent(cardFileName)}`);
         if (!res.ok || !res.detail) {
-            toastr.error('获取卡片详情失败: ' + (res.error || '未知'));
+            toastr.error('获取卡片资产详情失败: ' + (res.error || '未知'));
             return;
         }
 
@@ -208,14 +179,15 @@ async function openCardSettingsModal(cardFileName) {
         subModalElement.className = 'st-al-overlay';
         subModalElement.style.zIndex = '100001';
 
-        const isLocal = d.currentMode === 'local';
+        const isLocal = d.isFullyLocalized;
+        const allFiles = d.files || [];
 
         subModalElement.innerHTML = `
             <div class="st-al-submodal">
                 <div class="st-al-header">
                     <div class="st-al-header-title">
-                        <i class="fa-solid fa-sliders"></i>
-                        <span>图池链接设置 - 《${d.baseName}》</span>
+                        <i class="fa-solid fa-folder-open"></i>
+                        <span>图池资产详情 - 《${d.baseName}》</span>
                     </div>
                     <button class="st-al-close-btn" id="st_al_sub_close">&times;</button>
                 </div>
@@ -223,51 +195,63 @@ async function openCardSettingsModal(cardFileName) {
                 <div class="st-al-submodal-body">
                     <!-- Status Box -->
                     <div class="st-al-card-box">
-                        <div class="st-al-box-title"><i class="fa-solid fa-signal"></i> 运行状态与存储</div>
+                        <div class="st-al-box-title"><i class="fa-solid fa-server"></i> 本地服务与调用状态</div>
                         <div class="st-al-box-row">
-                            <span>当前调用模式：</span>
-                            <span>${isLocal ? '<span class="st-al-badge st-al-badge-success"><i class="fa-solid fa-bolt"></i> 本地服务器加速 (无梯秒开)</span>' : '<span class="st-al-badge st-al-badge-warning"><i class="fa-solid fa-globe"></i> 原始远程外链 (需梯子)</span>'}</span>
+                            <span>当前运行模式：</span>
+                            <span>${isLocal ? '<span class="st-al-badge st-al-badge-success"><i class="fa-solid fa-bolt"></i> 本地服务器直连 (免梯秒开)</span>' : '<span class="st-al-badge st-al-badge-warning"><i class="fa-solid fa-cloud-arrow-down"></i> 含待本地化资源</span>'}</span>
                         </div>
                         <div class="st-al-box-row">
-                            <span>本地存储目录：</span>
-                            <span class="st-al-path-code" style="font-size:0.78rem;">${d.safeName} (${d.diskCount} 张, ${d.diskSizeFormatted})</span>
+                            <span>本地接口基准：</span>
+                            <div style="display:flex;align-items:center;gap:6px;">
+                                <code class="st-al-path-code" style="font-size:0.78rem;">${d.localPrefix}/</code>
+                                <button class="st-al-btn-copy" id="st_al_sub_copy_prefix" title="复制本地基地址">复制</button>
+                            </div>
                         </div>
                         <div class="st-al-box-row">
-                            <span>原始图源识别：</span>
-                            <span style="font-size:0.8rem;color:#cbd5e1;max-width:380px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;">${d.originalPrefix || '未知/已直接本地化'}</span>
+                            <span>磁盘存储目录：</span>
+                            <span style="font-size:0.8rem;color:#cbd5e1;font-family:monospace;">${d.diskFolder}/</span>
                         </div>
                     </div>
 
-                    <!-- Custom Base URL Config Box -->
+                    <!-- Asset Stats Grid -->
                     <div class="st-al-card-box">
-                        <div class="st-al-box-title"><i class="fa-solid fa-link"></i> 自定义图池外链基地址 (高级)</div>
-                        <div style="font-size:0.8rem;color:#94a3b8;margin-bottom:8px;">若还原外链时需要指定特定图床或 GitHub 仓库地址，可在下方调整：</div>
-                        <input id="st_al_custom_base" type="text" class="text_pole" style="width:100%;font-size:0.85rem;" value="${d.originalPrefix.startsWith('http') ? d.originalPrefix : ''}" placeholder="例如: https://files.catbox.moe/ 或 GitHub Raw 路径">
+                        <div class="st-al-box-title"><i class="fa-solid fa-chart-pie"></i> 图池资产统计</div>
+                        <div class="st-al-stat-grid">
+                            <div class="st-al-stat-card">
+                                <div class="st-al-stat-card-label">本地立绘总数</div>
+                                <div class="st-al-stat-card-val" style="color:#38bdf8;">${d.diskCount} <span style="font-size:0.75rem;font-weight:normal;">张</span></div>
+                            </div>
+                            <div class="st-al-stat-card">
+                                <div class="st-al-stat-card-label">实际磁盘占用</div>
+                                <div class="st-al-stat-card-val" style="color:#4ade80;">${d.diskSizeFormatted}</div>
+                            </div>
+                            <div class="st-al-stat-card">
+                                <div class="st-al-stat-card-label">缺失待补全</div>
+                                <div class="st-al-stat-card-val" style="color:${d.missingCount > 0 ? '#facc15' : '#94a3b8'};">${d.missingCount} <span style="font-size:0.75rem;font-weight:normal;">张</span></div>
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- URL Mapping Preview Box -->
+                    <!-- Files Inventory Box with Search -->
                     <div class="st-al-card-box">
-                        <div class="st-al-box-title" style="justify-content:space-between;cursor:pointer;" id="st_al_toggle_preview">
-                            <span><i class="fa-solid fa-table-list"></i> 链接映射预览 (${d.sampleMappings.length}/${d.totalMappingsCount} 张)</span>
-                            <span style="color:#38bdf8;font-size:0.75rem;"><i class="fa-solid fa-chevron-down"></i> 点击展开/收起</span>
+                        <div class="st-al-box-title" style="justify-content:space-between;">
+                            <span><i class="fa-solid fa-images"></i> 本地立绘清单 (<span id="st_al_sub_file_count">${allFiles.length}</span> 张)</span>
+                            <span style="color:#64748b;font-size:0.75rem;">点击条目可快速复制路径</span>
                         </div>
-                        <div id="st_al_preview_content" style="display:none;max-height:180px;overflow-y:auto;">
+                        <div style="margin-bottom:8px;">
+                            <input type="text" id="st_al_sub_search" class="text_pole" style="width:100%;font-size:0.82rem;padding:6px 10px;" placeholder="输入文件名过滤（如 calm, naked, sex, uniform...）">
+                        </div>
+                        <div style="max-height:180px;overflow-y:auto;border:1px solid rgba(255,255,255,0.06);border-radius:6px;background:#181b24;">
                             <table class="st-al-sample-table">
                                 <thead>
                                     <tr>
                                         <th>立绘文件名</th>
-                                        <th>当前本地调用路径</th>
-                                        <th>原始外链对应</th>
+                                        <th style="width:90px;">文件大小</th>
+                                        <th>本地调用路由 (点击复制)</th>
                                     </tr>
                                 </thead>
-                                <tbody>
-                                    ${d.sampleMappings.map(m => `
-                                        <tr>
-                                            <td><b>${m.filename}</b></td>
-                                            <td style="color:#4ade80;">${m.localUrl}</td>
-                                            <td style="color:#94a3b8;">${m.originalUrl}</td>
-                                        </tr>
-                                    `).join('')}
+                                <tbody id="st_al_sub_files_tbody">
+                                    ${renderFileListRows(allFiles)}
                                 </tbody>
                             </table>
                         </div>
@@ -276,17 +260,13 @@ async function openCardSettingsModal(cardFileName) {
 
                 <div class="st-al-submodal-footer">
                     <div>
-                        ${isLocal ? `
-                            <button class="st-al-btn-danger" id="st_al_sub_revert_btn">
-                                <i class="fa-solid fa-clock-rotate-left"></i> 还原为原始外链 (导出模式)
-                            </button>
-                        ` : `
-                            <span style="font-size:0.8rem;color:#facc15;"><i class="fa-solid fa-triangle-exclamation"></i> 当前已是原始外链模式</span>
-                        `}
+                        <span style="font-size:0.8rem;color:#94a3b8;">
+                            <i class="fa-solid fa-circle-check" style="color:#4ade80;"></i> 图片由酒馆主机持久化存储，多端设备共享秒开
+                        </span>
                     </div>
                     <div style="display:flex;gap:8px;">
-                        <button class="st-al-btn-primary" id="st_al_sub_localize_btn">
-                            <i class="fa-solid fa-bolt"></i> ${isLocal ? '重新同步本地化' : '一键应用本地加速'}
+                        <button class="st-al-btn-primary" id="st_al_sub_resync_btn">
+                            <i class="fa-solid fa-bolt"></i> 重新扫描同步
                         </button>
                         <button class="st-al-btn-secondary" id="st_al_sub_cancel_btn">关闭</button>
                     </div>
@@ -302,26 +282,57 @@ async function openCardSettingsModal(cardFileName) {
             if (e.target === subModalElement) closeSubModal();
         });
 
-        // Toggle preview
-        document.getElementById('st_al_toggle_preview').addEventListener('click', () => {
-            const el = document.getElementById('st_al_preview_content');
-            if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        // Copy prefix
+        document.getElementById('st_al_sub_copy_prefix').addEventListener('click', () => {
+            navigator.clipboard.writeText(`${d.localPrefix}/`);
+            toastr.success('本地基准路径已复制！');
         });
 
-        // Revert action
-        document.getElementById('st_al_sub_revert_btn')?.addEventListener('click', () => {
-            const customVal = document.getElementById('st_al_custom_base')?.value.trim() || null;
-            doRevertCard(cardFileName, customVal);
+        // Re-sync action
+        document.getElementById('st_al_sub_resync_btn').addEventListener('click', () => {
+            doLocalizeCard(cardFileName, document.getElementById('st_al_sub_resync_btn'));
         });
 
-        // Localize action
-        document.getElementById('st_al_sub_localize_btn')?.addEventListener('click', () => {
-            doLocalizeCard(cardFileName, document.getElementById('st_al_sub_localize_btn'));
+        // Search filter for files list
+        const searchInput = document.getElementById('st_al_sub_search');
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            const filtered = allFiles.filter(f => f.filename.toLowerCase().includes(query));
+            document.getElementById('st_al_sub_files_tbody').innerHTML = renderFileListRows(filtered);
+            document.getElementById('st_al_sub_file_count').textContent = filtered.length;
+            bindCopyEvents();
         });
+
+        bindCopyEvents();
 
     } catch (e) {
-        toastr.error('打开卡片配置失败: ' + e.message);
+        toastr.error('打开卡片资产失败: ' + e.message);
     }
+}
+
+function renderFileListRows(files) {
+    if (files.length === 0) {
+        return `<tr><td colspan="3" style="text-align:center;padding:18px;color:#64748b;">本地图池中暂未找到匹配文件</td></tr>`;
+    }
+    return files.slice(0, 50).map(f => `
+        <tr class="st-al-file-row" data-url="${f.localUrl}" style="cursor:pointer;" title="点击复制完整本地路径">
+            <td><b>${f.filename}</b></td>
+            <td style="color:#94a3b8;">${f.sizeFormatted}</td>
+            <td style="color:#4ade80;">${f.localUrl}</td>
+        </tr>
+    `).join('') + (files.length > 50 ? `<tr><td colspan="3" style="text-align:center;color:#64748b;padding:6px;">...仅展示前 50 张，可使用上方搜索过滤具体文件</td></tr>` : '');
+}
+
+function bindCopyEvents() {
+    document.querySelectorAll('.st-al-file-row').forEach(row => {
+        row.addEventListener('click', () => {
+            const url = row.getAttribute('data-url');
+            if (url) {
+                navigator.clipboard.writeText(url);
+                toastr.success(`已复制: ${url}`);
+            }
+        });
+    });
 }
 
 function closeSubModal() {
@@ -356,12 +367,10 @@ function renderCardTable() {
         if (c.isFullyLocalized) {
             badgeHtml = `<span class="st-al-badge st-al-badge-success"><i class="fa-solid fa-check-circle"></i> 已本地化</span>`;
         } else if (c.totalExternalCount > 0) {
-            badgeHtml = `<span class="st-al-badge st-al-badge-warning"><i class="fa-solid fa-triangle-exclamation"></i> 含远程外链</span>`;
+            badgeHtml = `<span class="st-al-badge st-al-badge-warning"><i class="fa-solid fa-cloud-arrow-down"></i> 待本地化</span>`;
         } else {
             badgeHtml = `<span class="st-al-badge" style="background:#334155;color:#94a3b8;"><i class="fa-solid fa-circle-info"></i> 本地卡</span>`;
         }
-
-        const externalCount = c.totalExternalCount || 0;
 
         return `
             <tr data-file="${c.cardFileName}">
@@ -371,20 +380,20 @@ function renderCardTable() {
                 </td>
                 <td>${badgeHtml}</td>
                 <td>
-                    <div class="st-al-stat">本地调用: <b>${c.localAssetRefMatches || 0}</b></div>
-                    <div class="st-al-stat">远程外链: <b style="color:${externalCount > 0 ? '#facc15' : '#94a3b8'}">${externalCount}</b></div>
+                    <div class="st-al-stat">本地调用: <b>${c.localAssetRefMatches || 0} 处</b></div>
+                    <div class="st-al-stat">待下载: <b style="color:${c.missingOnDiskCount > 0 ? '#facc15' : '#94a3b8'}">${c.missingOnDiskCount || 0}</b></div>
                 </td>
                 <td>
-                    <div class="st-al-stat">立绘文件: <b>${c.diskFilesCount || 0} 张</b> (${c.diskSizeFormatted || '0 B'})</div>
-                    <div class="st-al-stat">待下载: <b>${c.missingOnDiskCount || 0}</b></div>
+                    <div class="st-al-stat">立绘文件: <b>${c.diskFilesCount || 0} 张</b></div>
+                    <div class="st-al-stat">占用空间: <b>${c.diskSizeFormatted || '0 B'}</b></div>
                 </td>
                 <td style="text-align: right; white-space: nowrap;">
                     <div style="display:inline-flex;gap:6px;align-items:center;">
                         <button class="st-al-btn-secondary st-al-localize-btn" data-file="${c.cardFileName}">
-                            <i class="fa-solid fa-bolt"></i> ${c.isFullyLocalized ? '重新处理' : '一键本地化'}
+                            <i class="fa-solid fa-bolt"></i> ${c.isFullyLocalized ? '重新同步' : '一键本地化'}
                         </button>
-                        <button class="st-al-btn-outline st-al-settings-btn" data-file="${c.cardFileName}" title="图池链接设置与外链还原">
-                            <i class="fa-solid fa-gear"></i> 图池设置
+                        <button class="st-al-btn-outline st-al-assets-btn" data-file="${c.cardFileName}" title="查看本地图池立绘资产与文件清单">
+                            <i class="fa-solid fa-folder-open"></i> 图池资产
                         </button>
                     </div>
                 </td>
@@ -400,10 +409,10 @@ function renderCardTable() {
         });
     });
 
-    tbody.querySelectorAll('.st-al-settings-btn').forEach(btn => {
+    tbody.querySelectorAll('.st-al-assets-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const fn = btn.getAttribute('data-file');
-            openCardSettingsModal(fn);
+            openCardAssetsModal(fn);
         });
     });
 }
@@ -480,8 +489,8 @@ function showModal(initialFocusCard = null) {
                         <tr>
                             <th>角色卡 / 目录</th>
                             <th>状态</th>
-                            <th>调用统计</th>
-                            <th>文件与磁盘占用</th>
+                            <th>本地调用统计</th>
+                            <th>立绘文件与磁盘</th>
                             <th style="text-align: right;">操作</th>
                         </tr>
                     </thead>
