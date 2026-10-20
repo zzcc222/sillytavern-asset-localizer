@@ -13,7 +13,7 @@
 
 ## ✨ 核心特性
 
-- ⚡ **无梯秒开，多端共享**：
+- ⚡ **纯本地加速，多端免梯秒开**：
   - 数据统一存放于酒馆主机 (`data/shared_card_assets/`)。
   - 一台设备本地化，手机、平板、网页端全部受益，无需重复下载，不浪费客户端流量与储存空间。
 - 🔍 **全架构图池深度解析**：
@@ -21,17 +21,28 @@
   - 支持 `baseUrlMap` 动态宏映射图池。
   - 支持 Catbox 图床直链与哈希命名图池。
   - 支持 GitHub Raw commit hash 与 Releases 直链。
-- ⚙️ **全角色卡专属【图池设置】面板**：
-  - 每张卡片均拥有独立的控制面板，清晰掌握当前调用模式（本地加速 / 原始外链）、本地占用大小与张数。
-  - 实时展示立绘文件名、本地路径与原外链的对应关系映射表。
-- 🔙 **无损外链还原（导出分享模式）**：
-  - 内置三重兜底反向还原算法（元数据注册表 -> `.png.bak` 深度提取 -> Catbox 哈希重组 -> 自定义基地址）。
-  - 随时将角色卡安全还原回原始远程外链，方便打包导出分享给未安装本地化环境的好友。
+- 📁 **全角色卡专属【图池资产】面板**：
+  - 每张卡片均拥有独立的资产控制面板，清晰掌握本地服务接口、本地存储目录、立绘总张数与磁盘占用大小。
+  - 内置立绘文件清单浏览器，支持实时关键字搜索（如 `calm`, `naked`, `uniform` 等），方便快速查阅与复制本地调用路由。
 - 🧹 **无主孤儿图清理**：
   - 自动扫描清理因角色卡已被删除而遗留在硬盘上的无用立绘文件夹，释放宝贵磁盘空间。
 - 🌐 **跨平台原生 Express 静态路由**：
   - 自带 Express 静态路由分发 (`/api/plugins/st-asset-localizer/assets/...`)。
   - 完美兼容 Windows、Linux、macOS 与 Docker，无需额外配置 Nginx 或本地网页服务器。
+
+---
+
+## 📸 界面预览
+
+### 1. 主控制面板
+清晰展示所有角色卡的本地化状态、调用统计、磁盘占用与立绘张数，支持模糊搜索与状态筛选。
+
+![主列表](https://raw.githubusercontent.com/zzcc222/sillytavern-asset-localizer/main/docs/st_localizer_2_1_main.png)
+
+### 2. 图池资产详情
+每一张角色卡均可打开专属资产弹窗，查看本地服务状态、存储健康度以及完整的立绘文件清单。
+
+![图池资产详情](https://raw.githubusercontent.com/zzcc222/sillytavern-asset-localizer/main/docs/st_card_assets_modal.png)
 
 ---
 
@@ -77,7 +88,7 @@ sillytavern-asset-localizer/
 │   ├── api.js             # REST API 与原生 Express 静态立绘分发
 │   ├── constants.js       # 多平台路径解析与文件名 Windows 安全转义
 │   ├── downloader.js      # 多线程高并发断点下载器 (带镜像加速与 Magic Byte 校验)
-│   ├── localizer.js       # 核心本地化引擎、外链还原器与孤儿清理器
+│   ├── localizer.js       # 核心本地化引擎与孤儿清理器
 │   ├── png-parser.js      # 低层 PNG Text Chunk 无损编解码器
 │   └── scanner.js         # 角色卡元数据递归扫描与图源提取器
 ├── client/                # 前端交互扩展 (SillyTavern UI Extension)
@@ -94,10 +105,7 @@ sillytavern-asset-localizer/
 ### Q1: 图片下载后保存在哪里？
 所有立绘文件统一存放在 SillyTavern 根目录下的 `data/shared_card_assets/<安全卡名>/` 中。
 
-### Q2: 还原为原始外链会破坏角色卡吗？
-不会。插件在本地化卡片时会自动保留 `.png.bak` 原始备份，并在卡片元数据中建立逆向注册表。点击还原会完全恢复原作者的调用链接，确保分享给其他用户时依然能正常工作。
-
-### Q3: 为什么部分纯文字卡片显示立绘为 0？
+### Q2: 为什么部分纯文字卡片显示立绘为 0？
 如果卡片本身没有立绘图池或外链，插件会识别为无外部资源卡，无需执行本地化。
 
 ---

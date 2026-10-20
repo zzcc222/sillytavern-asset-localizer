@@ -1,7 +1,7 @@
 import express from 'express';
 import { ASSETS_DIR, LEGACY_ASSETS_DIR } from './constants.js';
 import { scanCard, scanAllCards } from './scanner.js';
-import { localizeCard, revertCard, getCardDetail, getGlobalStats, cleanOrphans, loadConfig, saveConfig } from './localizer.js';
+import { localizeCard, getCardDetail, getGlobalStats, cleanOrphans, loadConfig, saveConfig } from './localizer.js';
 
 export function registerApi(router) {
     router.use(express.json({ limit: '50mb' }));
@@ -37,7 +37,7 @@ export function registerApi(router) {
         }
     });
 
-    // Detailed card configuration & mappings
+    // Detailed card assets inventory
     router.get('/card-detail', (req, res) => {
         try {
             const { cardFileName } = req.query;
@@ -54,17 +54,6 @@ export function registerApi(router) {
             const { cardFileName } = req.body;
             if (!cardFileName) return res.status(400).json({ ok: false, error: 'cardFileName required' });
             const result = await localizeCard(cardFileName);
-            res.json({ ok: true, result });
-        } catch (err) {
-            res.status(500).json({ ok: false, error: err.message });
-        }
-    });
-
-    router.post('/revert', async (req, res) => {
-        try {
-            const { cardFileName, customOriginalBase } = req.body;
-            if (!cardFileName) return res.status(400).json({ ok: false, error: 'cardFileName required' });
-            const result = await revertCard(cardFileName, customOriginalBase);
             res.json({ ok: true, result });
         } catch (err) {
             res.status(500).json({ ok: false, error: err.message });
