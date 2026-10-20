@@ -485,3 +485,62 @@
     background: #141720;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
+
+/* Responsive & Mobile Ergonomics */
+@media (max-width: 768px) {
+    .st-al-modal {
+        width: 98vw;
+        height: 94vh;
+        border-radius: 10px;
+    }
+    .st-al-submodal {
+        width: 96vw;
+        max-height: 92vh;
+    }
+    .st-al-header {
+        padding: 12px 16px;
+    }
+    .st-al-path-banner {
+        padding: 8px 14px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+    .st-al-path-left, .st-al-path-right {
+        width: 100%;
+        justify-content: space-between;
+    }
+    .st-al-path-code {
+        max-width: 220px;
+    }
+    .st-al-toolbar {
+        padding: 10px 14px;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .st-al-search-box {
+        max-width: 100%;
+    }
+    .st-al-filters {
+        justify-content: center;
+    }
+    .st-al-content {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .st-al-table {
+        min-width: 620px;
+    }
+    .st-al-stat-grid {
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    }
+    .st-al-submodal-footer {
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+        text-align: center;
+    }
+    .st-al-submodal-footer > div:last-child {
+        justify-content: flex-end;
+    }
+}

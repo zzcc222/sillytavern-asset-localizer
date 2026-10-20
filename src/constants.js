@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 
 export const PLUGIN_ID = 'st-asset-localizer';
@@ -21,13 +22,26 @@ export const DEFAULT_CONFIG = {
     autoPromptOnImport: true
 };
 
+try {
+    if (!fs.existsSync(ASSETS_DIR)) {
+        fs.mkdirSync(ASSETS_DIR, { recursive: true });
+    }
+} catch {}
+
 /**
- * Cross-platform directory sanitization (strips illegal Windows characters: < > : " / \\ | ? *)
+ * Cross-platform directory sanitization (strips illegal Windows characters: < > : " / \ | ? * and ASCII control characters)
  */
 export function sanitizeFolderName(name) {
-    if (!name) return 'unnamed';
-    return name
-        .replace(/[<>:"/\\\\|?*\\x00-\\x1F]/g, '_')
-        .replace(/\\.+$/, '')
-        .trim() || 'card';
+    if (!name || typeof name !== 'string') return 'card';
+    let sanitized = name
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+        .trim()
+        .replace(/^[.\s]+/, '')
+        .replace(/[.\s]+$/, '')
+        .trim();
+    if (!sanitized) return 'card';
+    if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i.test(sanitized)) {
+        sanitized = `_${sanitized}`;
+    }
+    return sanitized;
 }

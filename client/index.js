@@ -8,9 +8,44 @@ let currentStats = null;
 let activeFilter = 'all'; // 'all' | 'need' | 'localized'
 let searchQuery = '';
 let isProcessing = false;
+let isOpeningDetail = false;
 let configCache = { autoPromptOnImport: true, ghAccelerator: 'https://gh-proxy.com/' };
 
 const getCtx = () => window.SillyTavern?.getContext?.();
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+async function copyToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch {}
+    }
+    try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        textArea.remove();
+        return successful;
+    } catch {
+        return false;
+    }
+}
 
 async function apiRequest(endpoint, method = 'GET', body = null) {
     const ctx = getCtx();
@@ -38,6 +73,11 @@ async function refreshStCharacters() {
     if (ctx && typeof ctx.getCharacters === 'function') {
         try {
             await ctx.getCharacters();
+            if (ctx.this_chid !== undefined && typeof ctx.selectCharacterById === 'function') {
+                await ctx.selectCharacterById(ctx.this_chid);
+            } else if (typeof ctx.reloadCurrentCharacter === 'function') {
+                await ctx.reloadCurrentCharacter();
+            }
             console.log('[图池本地化管家] 已刷新酒馆前端角色内存缓存');
         } catch (e) {
             console.warn('[图池本地化管家] 刷新角色内存失败:', e);
@@ -164,7 +204,11 @@ function hideProgress() {
 }
 
 // Open Pure Local Card Asset Inventory Sub-Modal
-async function openCardAssetsModal(cardFileName) {
+async function openCardAssetsModal(cardFileName, buttonEl = null) {
+    if (isOpeningDetail) return;
+    isOpeningDetail = true;
+    if (buttonEl) buttonEl.disabled = true;
+
     try {
         const res = await apiRequest(`/card-detail?cardFileName=${encodeURIComponent(cardFileName)}`);
         if (!res.ok || !res.detail) {
@@ -187,7 +231,7 @@ async function openCardAssetsModal(cardFileName) {
                 <div class="st-al-header">
                     <div class="st-al-header-title">
                         <i class="fa-solid fa-folder-open"></i>
-                        <span>图池资产详情 - 《${d.baseName}》</span>
+                        <span>图池资产详情 - 《${escapeHtml(d.baseName)}》</span>
                     </div>
                     <button class="st-al-close-btn" id="st_al_sub_close">&times;</button>
                 </div>
@@ -203,13 +247,13 @@ async function openCardAssetsModal(cardFileName) {
                         <div class="st-al-box-row">
                             <span>本地接口基准：</span>
                             <div style="display:flex;align-items:center;gap:6px;">
-                                <code class="st-al-path-code" style="font-size:0.78rem;">${d.localPrefix}/</code>
+                                <code class="st-al-path-code" style="font-size:0.78rem;">${escapeHtml(d.localPrefix)}/</code>
                                 <button class="st-al-btn-copy" id="st_al_sub_copy_prefix" title="复制本地基地址">复制</button>
                             </div>
                         </div>
                         <div class="st-al-box-row">
                             <span>磁盘存储目录：</span>
-                            <span style="font-size:0.8rem;color:#cbd5e1;font-family:monospace;">${d.diskFolder}/</span>
+                            <span style="font-size:0.8rem;color:#cbd5e1;font-family:monospace;">${escapeHtml(d.diskFolder)}/</span>
                         </div>
                     </div>
 
@@ -223,7 +267,7 @@ async function openCardAssetsModal(cardFileName) {
                             </div>
                             <div class="st-al-stat-card">
                                 <div class="st-al-stat-card-label">实际磁盘占用</div>
-                                <div class="st-al-stat-card-val" style="color:#4ade80;">${d.diskSizeFormatted}</div>
+                                <div class="st-al-stat-card-val" style="color:#4ade80;">${escapeHtml(d.diskSizeFormatted)}</div>
                             </div>
                             <div class="st-al-stat-card">
                                 <div class="st-al-stat-card-label">缺失待补全</div>
@@ -283,9 +327,10 @@ async function openCardAssetsModal(cardFileName) {
         });
 
         // Copy prefix
-        document.getElementById('st_al_sub_copy_prefix').addEventListener('click', () => {
-            navigator.clipboard.writeText(`${d.localPrefix}/`);
-            toastr.success('本地基准路径已复制！');
+        document.getElementById('st_al_sub_copy_prefix').addEventListener('click', async () => {
+            const ok = await copyToClipboard(`${d.localPrefix}/`);
+            if (ok) toastr.success('本地基准路径已复制！');
+            else toastr.info(`本地基准: ${d.localPrefix}/`);
         });
 
         // Re-sync action
@@ -307,6 +352,9 @@ async function openCardAssetsModal(cardFileName) {
 
     } catch (e) {
         toastr.error('打开卡片资产失败: ' + e.message);
+    } finally {
+        isOpeningDetail = false;
+        if (buttonEl) buttonEl.disabled = false;
     }
 }
 
@@ -315,21 +363,22 @@ function renderFileListRows(files) {
         return `<tr><td colspan="3" style="text-align:center;padding:18px;color:#64748b;">本地图池中暂未找到匹配文件</td></tr>`;
     }
     return files.slice(0, 50).map(f => `
-        <tr class="st-al-file-row" data-url="${f.localUrl}" style="cursor:pointer;" title="点击复制完整本地路径">
-            <td><b>${f.filename}</b></td>
-            <td style="color:#94a3b8;">${f.sizeFormatted}</td>
-            <td style="color:#4ade80;">${f.localUrl}</td>
+        <tr class="st-al-file-row" data-url="${escapeHtml(f.localUrl)}" style="cursor:pointer;" title="点击复制完整本地路径">
+            <td><b>${escapeHtml(f.filename)}</b></td>
+            <td style="color:#94a3b8;">${escapeHtml(f.sizeFormatted)}</td>
+            <td style="color:#4ade80;">${escapeHtml(f.localUrl)}</td>
         </tr>
     `).join('') + (files.length > 50 ? `<tr><td colspan="3" style="text-align:center;color:#64748b;padding:6px;">...仅展示前 50 张，可使用上方搜索过滤具体文件</td></tr>` : '');
 }
 
 function bindCopyEvents() {
     document.querySelectorAll('.st-al-file-row').forEach(row => {
-        row.addEventListener('click', () => {
+        row.addEventListener('click', async () => {
             const url = row.getAttribute('data-url');
             if (url) {
-                navigator.clipboard.writeText(url);
-                toastr.success(`已复制: ${url}`);
+                const ok = await copyToClipboard(url);
+                if (ok) toastr.success(`已复制: ${url}`);
+                else toastr.info(`路径: ${url}`);
             }
         });
     });
@@ -373,10 +422,10 @@ function renderCardTable() {
         }
 
         return `
-            <tr data-file="${c.cardFileName}">
+            <tr data-file="${escapeHtml(c.cardFileName)}">
                 <td>
-                    <div class="st-al-card-title">${c.baseName}</div>
-                    <div class="st-al-card-file">📁 ${c.safeName}</div>
+                    <div class="st-al-card-title">${escapeHtml(c.baseName)}</div>
+                    <div class="st-al-card-file">📁 ${escapeHtml(c.safeName)}</div>
                 </td>
                 <td>${badgeHtml}</td>
                 <td>
@@ -385,14 +434,14 @@ function renderCardTable() {
                 </td>
                 <td>
                     <div class="st-al-stat">立绘文件: <b>${c.diskFilesCount || 0} 张</b></div>
-                    <div class="st-al-stat">占用空间: <b>${c.diskSizeFormatted || '0 B'}</b></div>
+                    <div class="st-al-stat">占用空间: <b>${escapeHtml(c.diskSizeFormatted || '0 B')}</b></div>
                 </td>
                 <td style="text-align: right; white-space: nowrap;">
                     <div style="display:inline-flex;gap:6px;align-items:center;">
-                        <button class="st-al-btn-secondary st-al-localize-btn" data-file="${c.cardFileName}">
+                        <button class="st-al-btn-secondary st-al-localize-btn" data-file="${escapeHtml(c.cardFileName)}">
                             <i class="fa-solid fa-bolt"></i> ${c.isFullyLocalized ? '重新同步' : '一键本地化'}
                         </button>
-                        <button class="st-al-btn-outline st-al-assets-btn" data-file="${c.cardFileName}" title="查看本地图池立绘资产与文件清单">
+                        <button class="st-al-btn-outline st-al-assets-btn" data-file="${escapeHtml(c.cardFileName)}" title="查看本地图池立绘资产与文件清单">
                             <i class="fa-solid fa-folder-open"></i> 图池资产
                         </button>
                     </div>
@@ -412,7 +461,7 @@ function renderCardTable() {
     tbody.querySelectorAll('.st-al-assets-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const fn = btn.getAttribute('data-file');
-            openCardAssetsModal(fn);
+            openCardAssetsModal(fn, btn);
         });
     });
 }
@@ -542,11 +591,12 @@ function showModal(initialFocusCard = null) {
     document.getElementById('st_al_refresh_btn').addEventListener('click', fetchCardList);
     document.getElementById('st_al_batch_btn').addEventListener('click', doBatchLocalize);
 
-    document.getElementById('st_al_copy_path_btn').addEventListener('click', () => {
+    document.getElementById('st_al_copy_path_btn').addEventListener('click', async () => {
         const pathText = document.getElementById('st_al_path_text')?.textContent;
         if (pathText) {
-            navigator.clipboard.writeText(pathText);
-            toastr.success('存储目录路径已复制到剪贴板！');
+            const ok = await copyToClipboard(pathText);
+            if (ok) toastr.success('存储目录路径已复制到剪贴板！');
+            else toastr.info(`存储目录: ${pathText}`);
         }
     });
 
@@ -611,11 +661,22 @@ function setupSettingsDrawer() {
             </div>
             <div class="inline-drawer-content">
                 <div class="st-al-ext-row">
-                    <span style="font-size:0.85rem;">GitHub 加速镜像：</span>
+                    <span style="font-size:0.85rem;">GitHub 镜像：</span>
                     <input id="st_al_cfg_gh" type="text" class="text_pole" placeholder="https://gh-proxy.com/" value="https://gh-proxy.com/">
-                    <button id="st_al_cfg_save" class="menu_button">保存</button>
                 </div>
                 <div class="st-al-ext-tip">为国内服务器提供 GitHub Raw 图片镜像加速</div>
+
+                <div class="st-al-ext-row" style="margin-top:8px;">
+                    <span style="font-size:0.85rem;">HTTP 代理：</span>
+                    <input id="st_al_cfg_proxy" type="text" class="text_pole" placeholder="http://127.0.0.1:7890 (可选)">
+                </div>
+                <div class="st-al-ext-tip">用于加速 Catbox 或直连外网图池</div>
+
+                <div class="st-al-ext-row" style="margin-top:8px;">
+                    <span style="font-size:0.85rem;">下载并发数：</span>
+                    <input id="st_al_cfg_concurrency" type="number" min="1" max="30" class="text_pole" style="width:70px;" value="10">
+                    <button id="st_al_cfg_save" class="menu_button">保存配置</button>
+                </div>
 
                 <div style="margin-top: 10px;">
                     <label class="checkbox_label" style="display:flex;align-items:center;gap:6px;cursor:pointer;">
@@ -638,20 +699,32 @@ function setupSettingsDrawer() {
     apiRequest('/config').then(res => {
         if (res.ok && res.config) {
             configCache = { ...configCache, ...res.config };
-            const input = document.getElementById('st_al_cfg_gh');
+            const inputGh = document.getElementById('st_al_cfg_gh');
+            const inputProxy = document.getElementById('st_al_cfg_proxy');
+            const inputConc = document.getElementById('st_al_cfg_concurrency');
             const promptChk = document.getElementById('st_al_cfg_prompt');
-            if (input && configCache.ghAccelerator) input.value = configCache.ghAccelerator;
+
+            if (inputGh && configCache.ghAccelerator !== undefined) inputGh.value = configCache.ghAccelerator;
+            if (inputProxy && configCache.httpProxy !== undefined) inputProxy.value = configCache.httpProxy;
+            if (inputConc && configCache.concurrency) inputConc.value = configCache.concurrency;
             if (promptChk) promptChk.checked = configCache.autoPromptOnImport !== false;
         }
     }).catch(() => {});
 
     document.getElementById('st_al_cfg_save')?.addEventListener('click', async () => {
-        const val = document.getElementById('st_al_cfg_gh')?.value.trim();
+        const ghVal = document.getElementById('st_al_cfg_gh')?.value.trim();
+        const proxyVal = document.getElementById('st_al_cfg_proxy')?.value.trim();
+        const concVal = parseInt(document.getElementById('st_al_cfg_concurrency')?.value, 10) || 10;
         const promptVal = document.getElementById('st_al_cfg_prompt')?.checked;
         try {
-            await apiRequest('/config', 'POST', { ghAccelerator: val, autoPromptOnImport: promptVal });
-            configCache.ghAccelerator = val;
-            configCache.autoPromptOnImport = promptVal;
+            const newCfg = {
+                ghAccelerator: ghVal,
+                httpProxy: proxyVal,
+                concurrency: concVal,
+                autoPromptOnImport: promptVal
+            };
+            await apiRequest('/config', 'POST', newCfg);
+            configCache = { ...configCache, ...newCfg };
             toastr.success('配置已保存！');
         } catch (e) {
             toastr.error('保存失败: ' + e.message);
@@ -660,7 +733,7 @@ function setupSettingsDrawer() {
 
     document.getElementById('st_al_cfg_prompt')?.addEventListener('change', async (e) => {
         configCache.autoPromptOnImport = e.target.checked;
-        await apiRequest('/config', 'POST', { ...configCache, autoPromptOnImport: e.target.checked }).catch(() => {});
+        await apiRequest('/config', 'POST', { autoPromptOnImport: e.target.checked }).catch(() => {});
     });
 
     document.getElementById('st_al_open_panel_btn')?.addEventListener('click', () => {
@@ -690,6 +763,15 @@ async function checkCharacterOnLoad() {
                     }
                 }
             );
+            setTimeout(() => {
+                const btn = document.getElementById('st_al_toast_localize_btn');
+                if (btn) {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        doLocalizeCard(cardFileName, btn);
+                    });
+                }
+            }, 100);
         }
     } catch {}
 }
@@ -736,6 +818,18 @@ jQuery(async () => {
         setupCharacterDrawerButton();
         setupSettingsDrawer();
     }, 2500);
+
+    // Global Escape key listener to close modals
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            if (subModalElement) {
+                closeSubModal();
+            } else if (modalElement && modalElement.style.display !== 'none') {
+                modalElement.style.display = 'none';
+                closeSubModal();
+            }
+        }
+    });
 
     console.log('[图池本地化管家] 客户端插件 2.1 加载完成');
 });

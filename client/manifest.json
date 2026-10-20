@@ -5,8 +5,8 @@
   "optional": [],
   "js": "index.js",
   "css": "style.css",
-  "author": "Antigravity",
-  "version": "1.0.0",
-  "homePage": "",
+  "author": "zzcc222",
+  "version": "2.1.0",
+  "homePage": "https://github.com/zzcc222/sillytavern-asset-localizer",
   "auto_update": false
 }

@@ -1,9 +1,52 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CHARACTERS_DIR, ASSETS_DIR, LEGACY_ASSETS_DIR, CACHE_DIR, CONFIG_FILE, DEFAULT_CONFIG, PLUGIN_ID, sanitizeFolderName } from './constants.js';
-import { scanCard, parseCardData, getCardBaseName, getDirStats, scanAllCards } from './scanner.js';
+import { scanCard, parseCardData, getCardBaseName, getDirStats, scanAllCards, unescapeUrl } from './scanner.js';
 import { batchDownload } from './downloader.js';
 import { writePngTextChunk } from './png-parser.js';
+
+function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function replaceUrlVariants(text, fromUrl, toUrl) {
+    if (!text || !fromUrl || !toUrl) return text;
+
+    const fromNoSlash = fromUrl.replace(/\/+$/, '');
+    const toNoSlash = toUrl.replace(/\/+$/, '');
+    const toWithSlash = `${toNoSlash}/`;
+
+    const bases = [fromNoSlash];
+    if (fromNoSlash.startsWith('https://')) {
+        bases.push('http://' + fromNoSlash.slice(8));
+    }
+
+    let result = text;
+    for (const base of bases) {
+        const directSlash = `${base}/`;
+        const escapedSlash = directSlash.replace(/\//g, '\\/');
+        const directNoSlash = base;
+        const escapedNoSlash = base.replace(/\//g, '\\/');
+
+        // Delimiter pattern: closing quotes, backslash-escaped quote, backtick, whitespace, comma, bracket, brace, or end of string
+        const delim = '(?=["\'`<>\\s,;}\\]]|\\\\["\'`]|$)';
+        const targetAtEnd = toUrl.endsWith('/') ? toWithSlash : toNoSlash;
+
+        // 1. Solidus with trailing slash at end of URL (before delimiter) -> honor trailing slash preference
+        result = result.replace(new RegExp(escapeRegExp(escapedSlash) + delim, 'g'), targetAtEnd);
+        result = result.replace(new RegExp(escapeRegExp(directSlash) + delim, 'g'), targetAtEnd);
+
+        // 2. Solidus within path (followed by non-delimiter, e.g. filename) -> MUST preserve trailing slash separator
+        result = result.replace(new RegExp(escapeRegExp(escapedSlash), 'g'), toWithSlash);
+        result = result.replace(new RegExp(escapeRegExp(directSlash), 'g'), toWithSlash);
+
+        // 3. No trailing slash
+        result = result.replace(new RegExp(escapeRegExp(escapedNoSlash), 'g'), toNoSlash);
+        result = result.replace(new RegExp(escapeRegExp(directNoSlash), 'g'), toNoSlash);
+    }
+
+    return result;
+}
 
 export function loadConfig() {
     try {
@@ -15,7 +58,14 @@ export function loadConfig() {
 }
 
 export function saveConfig(cfg) {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf-8');
+    const dir = path.dirname(CONFIG_FILE);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+    const current = loadConfig();
+    const merged = { ...current, ...(cfg || {}) };
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf-8');
+    return merged;
 }
 
 export function getGlobalStats() {
@@ -46,4 +96,322 @@ export function getGlobalStats() {
         totalSizeFormatted = `${(totalSizeBytes / 1024).toFixed(1)} KB`;
     }
 
-    return {\n        assetsDir: ASSETS_DIR,\n        totalFolders: folders.length,\n        totalFiles,\n        totalSizeBytes,\n        totalSizeFormatted\n    };\n}\n\n// Get rich card asset inventory for details modal\nexport function getCardDetail(cardFileName) {\n    const cardData = parseCardData(cardFileName);\n    if (!cardData) {\n        throw new Error('Card not found');\n    }\n\n    const scan = scanCard(cardFileName);\n    const baseName = scan.baseName;\n    const safeName = scan.safeName;\n    const localPrefix = `/api/plugins/${PLUGIN_ID}/assets/${safeName}`;\n\n    // Get files list from disk\n    const assetDir = path.join(ASSETS_DIR, safeName);\n    const legacyDir = path.join(LEGACY_ASSETS_DIR, baseName);\n    const targetDir = fs.existsSync(assetDir) ? assetDir : legacyDir;\n    const diskFiles = fs.existsSync(targetDir) ? fs.readdirSync(targetDir) : [];\n\n    const detailedFiles = diskFiles.map(filename => {\n        let sizeBytes = 0;\n        try {\n            sizeBytes = fs.statSync(path.join(targetDir, filename)).size;\n        } catch {}\n\n        let sizeFormatted = `${sizeBytes} B`;\n        if (sizeBytes > 1024 * 1024) {\n            sizeFormatted = `${(sizeBytes / (1024 * 1024)).toFixed(2)} MB`;\n        } else if (sizeBytes > 1024) {\n            sizeFormatted = `${(sizeBytes / 1024).toFixed(1)} KB`;\n        }\n\n        return {\n            filename,\n            sizeBytes,\n            sizeFormatted,\n            localUrl: `${localPrefix}/${filename}`\n        };\n    });\n\n    return {\n        cardFileName,\n        baseName,\n        safeName,\n        isFullyLocalized: scan.isFullyLocalized,\n        localPrefix,\n        diskFolder: `data/shared_card_assets/${safeName}`,\n        diskCount: diskFiles.length,\n        diskSizeFormatted: scan.diskSizeFormatted,\n        missingCount: scan.missingOnDiskCount,\n        missingFiles: scan.missingFiles || [],\n        totalExternalCount: scan.totalExternalCount || 0,\n        files: detailedFiles\n    };\n}\n\nexport async function localizeCard(cardFileName, onProgress = () => {}) {\n    const cardData = parseCardData(cardFileName);\n    if (!cardData) {\n        throw new Error('Card not found or missing metadata');\n    }\n\n    const scan = scanCard(cardFileName);\n    const baseName = scan.baseName;\n    const safeName = scan.safeName;\n    const targetAssetDir = path.join(ASSETS_DIR, safeName);\n    const config = loadConfig();\n\n    if (!fs.existsSync(targetAssetDir)) {\n        fs.mkdirSync(targetAssetDir, { recursive: true });\n    }\n\n    // 1. Download missing/external images\n    let downloadResult = { completed: 0, failed: 0, total: 0 };\n    if (scan.downloadTasks && scan.downloadTasks.length > 0) {\n        downloadResult = await batchDownload(scan.downloadTasks, targetAssetDir, config, onProgress);\n    }\n\n    // 2. Backup card to .bak before modifying\n    const cardPath = path.join(CHARACTERS_DIR, cardFileName);\n    const bakPath = path.join(CHARACTERS_DIR, `${cardFileName}.bak`);\n    if (!fs.existsSync(bakPath)) {\n        fs.copyFileSync(cardPath, bakPath);\n    }\n\n    // 3. Replace remote links with local server route\n    const localPrefix = `/api/plugins/${PLUGIN_ID}/assets/${safeName}`;\n    let newDecoded = cardData.decoded;\n\n    // Detect GitHub Raw repos in card\n    const ghRepoMatches = [...new Set(newDecoded.match(/https:\\/\\/raw\\.githubusercontent\\.com\\/[^\\/'\"`\\\\]+\\/[^\\/'\"`\\\\]+\\/[^\\/'\"`\\\\]+/g) || [])];\n    for (const ghBase of ghRepoMatches) {\n        newDecoded = newDecoded.split(ghBase).join(localPrefix);\n    }\n\n    // Replace Catbox prefix\n    if (newDecoded.includes('https://files.catbox.moe/')) {\n        newDecoded = newDecoded.split('https://files.catbox.moe/').join(`${localPrefix}/`);\n    }\n\n    // Also migrate any previous legacy /card_assets/ paths to new universal route\n    newDecoded = newDecoded.split(`/card_assets/${baseName}`).join(localPrefix);\n\n    // Replace specific individual tasks\n    if (scan.downloadTasks && scan.downloadTasks.length > 0) {\n        for (const task of scan.downloadTasks) {\n            const localFileUrl = `${localPrefix}/${task.filename}`;\n            if (task.url && newDecoded.includes(task.url)) {\n                newDecoded = newDecoded.split(task.url).join(localFileUrl);\n            }\n        }\n    }\n\n    // Embed metadata tag\n    try {\n        const parsed = JSON.parse(newDecoded);\n        if (!parsed.data) parsed.data = {};\n        if (!parsed.data.extensions) parsed.data.extensions = {};\n        if (!parsed.data.extensions.st_asset_localizer) parsed.data.extensions.st_asset_localizer = {};\n        parsed.data.extensions.st_asset_localizer.localized_at = new Date().toISOString();\n        newDecoded = JSON.stringify(parsed);\n    } catch {}\n\n    // 4. Write back to PNG buffer\n    const newRawBase64 = Buffer.from(newDecoded, 'utf-8').toString('base64');\n    const newPngBuffer = writePngTextChunk(cardData.buffer, cardData.key, newRawBase64);\n    fs.writeFileSync(cardPath, newPngBuffer);\n\n    // 5. Clear SillyTavern character cache\n    try {\n        if (fs.existsSync(CACHE_DIR)) {\n            const cachedFiles = fs.readdirSync(CACHE_DIR);\n            for (const f of cachedFiles) {\n                const fp = path.join(CACHE_DIR, f);\n                if (fs.statSync(fp).isFile()) fs.unlinkSync(fp);\n            }\n        }\n    } catch {}\n\n    try {\n        fs.chmodSync(targetAssetDir, 0o777);\n    } catch {}\n\n    const postScan = scanCard(cardFileName);\n    return {\n        success: true,\n        baseName,\n        safeName,\n        downloadResult,\n        postScan\n    };\n}\n\nexport function cleanOrphans() {\n    if (!fs.existsSync(ASSETS_DIR)) return { deleted: [], count: 0 };\n    const allCards = scanAllCards();\n    const activeSafeNames = new Set(allCards.map(c => c.safeName));\n\n    const folders = fs.readdirSync(ASSETS_DIR).filter(f => {\n        try { return fs.statSync(path.join(ASSETS_DIR, f)).isDirectory(); } catch { return false; }\n    });\n\n    const deleted = [];\n    for (const folder of folders) {\n        if (!activeSafeNames.has(folder)) {\n            const target = path.join(ASSETS_DIR, folder);\n            try {\n                fs.rmSync(target, { recursive: true, force: true });\n                deleted.push(folder);\n            } catch {}\n        }\n    }\n\n    return { deleted, count: deleted.length };\n}\n
+    return {
+        assetsDir: ASSETS_DIR,
+        totalFolders: folders.length,
+        totalFiles,
+        totalSizeBytes,
+        totalSizeFormatted
+    };
+}
+
+export function getCardDetail(cardFileName) {
+    const cardData = parseCardData(cardFileName);
+    if (!cardData) {
+        throw new Error('Card not found');
+    }
+
+    const scan = scanCard(cardFileName);
+    const baseName = scan.baseName;
+    const safeName = scan.safeName;
+    const localPrefix = `/api/plugins/${PLUGIN_ID}/assets/${safeName}`;
+
+    const assetDir = path.join(ASSETS_DIR, safeName);
+    const legacyDir = path.join(LEGACY_ASSETS_DIR, baseName);
+    const targetDir = fs.existsSync(assetDir) ? assetDir : legacyDir;
+    const diskFiles = fs.existsSync(targetDir)
+        ? fs.readdirSync(targetDir).filter(f => {
+            try { return fs.statSync(path.join(targetDir, f)).isFile(); } catch { return false; }
+        })
+        : [];
+
+    const detailedFiles = diskFiles.map(filename => {
+        let sizeBytes = 0;
+        try {
+            sizeBytes = fs.statSync(path.join(targetDir, filename)).size;
+        } catch {}
+
+        let sizeFormatted = `${sizeBytes} B`;
+        if (sizeBytes > 1024 * 1024) {
+            sizeFormatted = `${(sizeBytes / (1024 * 1024)).toFixed(2)} MB`;
+        } else if (sizeBytes > 1024) {
+            sizeFormatted = `${(sizeBytes / 1024).toFixed(1)} KB`;
+        }
+
+        return {
+            filename,
+            sizeBytes,
+            sizeFormatted,
+            localUrl: `${localPrefix}/${filename}`
+        };
+    });
+
+    return {
+        cardFileName,
+        baseName,
+        safeName,
+        isFullyLocalized: scan.isFullyLocalized,
+        localPrefix,
+        diskFolder: `data/shared_card_assets/${safeName}`,
+        diskCount: diskFiles.length,
+        diskSizeFormatted: scan.diskSizeFormatted,
+        missingCount: scan.missingOnDiskCount,
+        missingFiles: scan.missingFiles || [],
+        totalExternalCount: scan.totalExternalCount || 0,
+        files: detailedFiles
+    };
+}
+
+export async function localizeCard(cardFileName, onProgress = () => {}) {
+    const cardData = parseCardData(cardFileName);
+    if (!cardData) {
+        throw new Error('Card not found or missing metadata');
+    }
+
+    const scan = scanCard(cardFileName);
+    const baseName = scan.baseName;
+    const safeName = scan.safeName;
+    const cardPath = cardData.cardPath || (path.isAbsolute(cardFileName) ? cardFileName : path.join(CHARACTERS_DIR, cardFileName));
+    const targetAssetDir = path.join(ASSETS_DIR, safeName);
+    const config = loadConfig();
+
+    if (!fs.existsSync(targetAssetDir)) {
+        fs.mkdirSync(targetAssetDir, { recursive: true });
+    }
+
+    // 1. Download missing/external images
+    let downloadResult = { completed: 0, failed: 0, total: 0 };
+    if (scan.downloadTasks && scan.downloadTasks.length > 0) {
+        downloadResult = await batchDownload(scan.downloadTasks, targetAssetDir, config, onProgress);
+    }
+
+    // 2. Backup card to .bak before modifying
+    const bakPath = `${cardPath}.bak`;
+    if (!fs.existsSync(bakPath) && fs.existsSync(cardPath)) {
+        fs.copyFileSync(cardPath, bakPath);
+    }
+
+    // 3. Replace remote links with local server route
+    const localPrefix = `/api/plugins/${PLUGIN_ID}/assets/${safeName}`;
+    const originalUrls = {};
+
+    // Sort by URL length descending to prevent shorter prefix collisions
+    const sortedBaseUrls = [...(scan.externalBaseUrls || [])].sort((a, b) => b.length - a.length);
+    const sortedTasks = [...(scan.downloadTasks || [])].sort((a, b) => (b.url?.length || 0) - (a.url?.length || 0));
+
+    // Update each metadata chunk (e.g. both 'ccv3' and 'chara' if present)
+    let newPngBuffer = cardData.buffer;
+    const targetKeys = cardData.keys && cardData.keys.length > 0 ? cardData.keys : [cardData.key];
+
+    for (const k of targetKeys) {
+        let chunkText = cardData.decodedMap?.[k] || cardData.decoded;
+
+        // A. Replace specific individual image tasks (longer, specific URLs first to prevent prefix truncation)
+        for (const task of sortedTasks) {
+            const localFileUrl = `${localPrefix}/${task.filename}`;
+            if (task.url) {
+                originalUrls[task.url] = localFileUrl;
+                chunkText = replaceUrlVariants(chunkText, task.url, localFileUrl);
+            }
+        }
+
+        // B. Replace base URLs from charactersData and baseUrlMap
+        for (const bUrl of sortedBaseUrls) {
+            originalUrls[bUrl] = localPrefix;
+            chunkText = replaceUrlVariants(chunkText, bUrl, localPrefix);
+        }
+
+        // C. Replace Catbox domain prefixes
+        originalUrls['https://files.catbox.moe/'] = `${localPrefix}/`;
+        originalUrls['https://catbox.moe/'] = `${localPrefix}/`;
+        chunkText = replaceUrlVariants(chunkText, 'https://files.catbox.moe/', `${localPrefix}/`);
+        chunkText = replaceUrlVariants(chunkText, 'http://files.catbox.moe/', `${localPrefix}/`);
+        chunkText = replaceUrlVariants(chunkText, 'https://catbox.moe/', `${localPrefix}/`);
+        chunkText = replaceUrlVariants(chunkText, 'http://catbox.moe/', `${localPrefix}/`);
+
+        // D. Also migrate any previous legacy /card_assets/ paths to new universal route
+        chunkText = replaceUrlVariants(chunkText, `/card_assets/${baseName}`, localPrefix);
+
+        // E. Embed metadata tag into card JSON
+        try {
+            const parsed = JSON.parse(chunkText);
+            if (!parsed.data) parsed.data = {};
+            if (!parsed.data.extensions) parsed.data.extensions = {};
+            if (!parsed.data.extensions.st_asset_localizer) parsed.data.extensions.st_asset_localizer = {};
+            parsed.data.extensions.st_asset_localizer.localized_at = new Date().toISOString();
+            if (Object.keys(originalUrls).length > 0) {
+                parsed.data.extensions.st_asset_localizer.original_urls = {
+                    ...(parsed.data.extensions.st_asset_localizer.original_urls || {}),
+                    ...originalUrls
+                };
+            }
+            chunkText = JSON.stringify(parsed);
+        } catch {}
+
+        const newRawBase64 = Buffer.from(chunkText, 'utf-8').toString('base64');
+        newPngBuffer = writePngTextChunk(newPngBuffer, k, newRawBase64);
+    }
+
+    fs.writeFileSync(cardPath, newPngBuffer);
+
+    // 5. Clear SillyTavern character cache
+    try {
+        if (fs.existsSync(CACHE_DIR)) {
+            const cachedFiles = fs.readdirSync(CACHE_DIR);
+            for (const f of cachedFiles) {
+                const fp = path.join(CACHE_DIR, f);
+                if (fs.statSync(fp).isFile()) fs.unlinkSync(fp);
+            }
+        }
+    } catch {}
+
+    try {
+        fs.chmodSync(targetAssetDir, 0o777);
+    } catch {}
+
+    const postScan = scanCard(cardFileName);
+    return {
+        success: true,
+        baseName,
+        safeName,
+        downloadResult,
+        postScan
+    };
+}
+
+export function revertCard(cardFileName) {
+    const cardData = parseCardData(cardFileName);
+    if (!cardData) {
+        throw new Error('Card not found or missing metadata');
+    }
+
+    const cardPath = cardData.cardPath;
+    const bakPath = `${cardPath}.bak`;
+
+    // 1. If .bak file exists on disk, restore directly
+    if (fs.existsSync(bakPath)) {
+        fs.copyFileSync(bakPath, cardPath);
+
+        // Clear SillyTavern cache
+        try {
+            if (fs.existsSync(CACHE_DIR)) {
+                for (const f of fs.readdirSync(CACHE_DIR)) {
+                    const fp = path.join(CACHE_DIR, f);
+                    if (fs.statSync(fp).isFile()) fs.unlinkSync(fp);
+                }
+            }
+        } catch {}
+
+        const postScan = scanCard(cardFileName);
+        return {
+            success: true,
+            method: 'bak_file',
+            postScan
+        };
+    }
+
+    // 2. Revert from embedded original_urls mapping
+    try {
+        let originalUrls = null;
+        for (const k of (cardData.keys || [cardData.key])) {
+            const chunk = cardData.decodedMap?.[k] || cardData.decoded;
+            try {
+                const parsed = JSON.parse(chunk);
+                const target = parsed.data || parsed;
+                if (target.extensions?.st_asset_localizer?.original_urls) {
+                    originalUrls = target.extensions.st_asset_localizer.original_urls;
+                    break;
+                }
+            } catch {}
+        }
+
+        if (originalUrls && typeof originalUrls === 'object' && Object.keys(originalUrls).length > 0) {
+            let newPngBuffer = cardData.buffer;
+            const targetKeys = cardData.keys && cardData.keys.length > 0 ? cardData.keys : [cardData.key];
+            for (const k of targetKeys) {
+                let chunkText = cardData.decodedMap?.[k] || cardData.decoded;
+                // Invert replacements: localUrl -> remoteUrl
+                for (const [remoteUrl, localUrl] of Object.entries(originalUrls)) {
+                    chunkText = replaceUrlVariants(chunkText, localUrl, remoteUrl);
+                }
+                // Strip plugin extension metadata
+                try {
+                    const cleanParsed = JSON.parse(chunkText);
+                    const cleanTarget = cleanParsed.data || cleanParsed;
+                    if (cleanTarget.extensions?.st_asset_localizer) {
+                        delete cleanTarget.extensions.st_asset_localizer;
+                        if (Object.keys(cleanTarget.extensions).length === 0) {
+                            delete cleanTarget.extensions;
+                        }
+                    }
+                    chunkText = JSON.stringify(cleanParsed);
+                } catch {}
+
+                const newRawBase64 = Buffer.from(chunkText, 'utf-8').toString('base64');
+                newPngBuffer = writePngTextChunk(newPngBuffer, k, newRawBase64);
+            }
+            fs.writeFileSync(cardPath, newPngBuffer);
+
+            // Clear SillyTavern cache
+            try {
+                if (fs.existsSync(CACHE_DIR)) {
+                    for (const f of fs.readdirSync(CACHE_DIR)) {
+                        const fp = path.join(CACHE_DIR, f);
+                        if (fs.statSync(fp).isFile()) fs.unlinkSync(fp);
+                    }
+                }
+            } catch {}
+
+            const postScan = scanCard(cardFileName);
+            return {
+                success: true,
+                method: 'original_urls_reversion',
+                postScan
+            };
+        }
+    } catch {}
+
+    throw new Error('No backup (.bak) or original URL metadata found to revert card');
+}
+
+export function cleanOrphans() {
+    if (!fs.existsSync(ASSETS_DIR)) return { deleted: [], count: 0 };
+    const allCards = scanAllCards();
+    // Safety guard: never wipe assets if no cards are detected or readable
+    if (allCards.length === 0) return { deleted: [], count: 0 };
+
+    const activeSafeNames = new Set();
+    for (const c of allCards) {
+        if (c.safeName) {
+            activeSafeNames.add(c.safeName.toLowerCase());
+        }
+        if (c.baseName) {
+            activeSafeNames.add(c.baseName.toLowerCase());
+        }
+        if (c.cardFileName) {
+            const derivedBase = getCardBaseName(path.basename(c.cardFileName));
+            activeSafeNames.add(sanitizeFolderName(derivedBase).toLowerCase());
+            activeSafeNames.add(derivedBase.toLowerCase());
+        }
+    }
+
+    const folders = fs.readdirSync(ASSETS_DIR).filter(f => {
+        try {
+            if (f.startsWith('.') || f.startsWith('_')) return false;
+            return fs.statSync(path.join(ASSETS_DIR, f)).isDirectory();
+        } catch { return false; }
+    });
+
+    const deleted = [];
+    for (const folder of folders) {
+        if (!activeSafeNames.has(folder.toLowerCase())) {
+            const target = path.join(ASSETS_DIR, folder);
+            try {
+                fs.rmSync(target, { recursive: true, force: true });
+                deleted.push(folder);
+            } catch {}
+        }
+    }
+
+    return { deleted, count: deleted.length };
+}
