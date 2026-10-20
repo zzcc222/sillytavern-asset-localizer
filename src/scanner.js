@@ -4,7 +4,9 @@ import { CHARACTERS_DIR, ASSETS_DIR, LEGACY_ASSETS_DIR, PLUGIN_ID, sanitizeFolde
 import { readPngTextChunks } from './png-parser.js';
 
 export function getCardBaseName(cardFileName) {
-    const base = path.basename(cardFileName);
+    if (!cardFileName || typeof cardFileName !== 'string') return '';
+    const normalized = cardFileName.replace(/\\/g, '/');
+    const base = path.basename(normalized);
     return base.replace(/\.png$/i, '');
 }
 
@@ -78,7 +80,7 @@ export function unescapeUrl(url) {
 export function extractCleanFilename(url, fallbackStem = 'image') {
     const clean = unescapeUrl(url);
     try {
-        const withoutQuery = clean.split(/[?#]/)[0];
+        const withoutQuery = clean.split(/[?#]/)[0].replace(/\\/g, '/');
         const base = path.basename(withoutQuery);
         let sanitized = sanitizeFolderName(base);
         if (sanitized && sanitized !== 'card') {
